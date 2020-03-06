@@ -1,0 +1,245 @@
+---
+title: "ANOVA"
+author: "Sean Trott"
+date: "March 5, 2020"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+
+```{r include = FALSE}
+library(tidyverse)
+library(reshape)
+```
+
+# Introduction
+
+Analysis of experimental data usually involves asking whether there is a larger difference between experimental groups than you'd expect from random sampling error alone. 
+
+For example, you might want to know whether the metaphor you use to describe happiness affects people’s Happiness Score. You use two metaphors: PURSUIT (“in search of happiness”), and SUBSTANCE (e.g., “full of joy”). 
+
+With only two metaphors, you can use a [t-test](https://en.wikipedia.org/wiki/Student%27s_t-test) to determine whether there's a difference across groups. But sometimes, you want to compare *more* than two groups. For example, maybe you add a *third* metaphor: FLIGHT ("flying high"). 
+In each case, you *could* just run a series of t-tests, but then you'll run into a [multiple comparisons problem](https://en.wikipedia.org/wiki/Multiple_comparisons_problem). Thus, you need a way to ask: **are there more differences across each group than within each group**?
+
+This is exactly what an ANOVA ("Analysis of Variance") aims to do. As with a t-test, an ANOVA tests a **null hypothesis**: namely, that the means of each group are equal. We can express this as follows:
+
+$H_0: \mu_1 = \mu_2 = \mu_3 = ... = \mu_k$
+
+Where $k$ is the number of groups. 
+
+$H_0$ is put to the test by comparing the variance *between* groups to the variance *within* groups. This comparison is called the **F-value** (or **F-statistic**):
+
+$F = \frac{\text{Between-group variance}}{\text{Within-group variance}}$
+
+If there is a **treatment effect** of some variable $X$ on our dependent variable $Y$, that should show up as variance *between* groups. Otherwise, $H_0$ predicts that the variance across groups should be the same as the variance within groups.
+
+## Conceptual explanation: a null effect
+
+One way to think about a null effect here is that in the absence of a treatment effect, the $\text{Between-group variance}$ should be equivalent to **random error**, i.e., the same as our $\text{Within-group variance}$.
+
+Imagine if we sampled people from the population and randomly assigned them to three groups. Each group was assigned a different color hat: red, green, and blue. Now imagine that we measure each individual's blood pressure after receiving the height.
+
+My intuition is that the color of the hat each person was given should have no relationship to their blood pressure. Accordingly, our different "groups" shouldn't show much variability at all. Any variability they *do* show should just be a function of random error---just the same as the variability *within* each group. That is, the means of each group ${\mu_{green}, \mu_{red}, \mu_{blue}}$ should be approximately the same.
+
+Recall that the denominator of our $F$ equation, $\text{Within-group variance}$, is meant to reflect the amount of variability we expect by chance. Thus, we can also think of this as being equal to $\text{Random error}$. 
+
+Now, if our groups aren't meaningfully different, then our $\text{Between-group variance}$ should also be equal to $\text{Random error}$. But if they are, then it should be equal to $1 + \text{Random error}$.
+
+Thus, we can rewrite our hypotheses as follows:
+
+$H_0: F = \frac{\text{Random error}}{\text{Random error}}$
+
+$H_1: F = \frac{\text{Treatment effect + Random error}}{\text{Random error}}$
+
+Thus, logically, $H_0$ predicts a value for $F$ that's close to $1$. And $H_1$ predicts a value for $F$ that's larger than $1$.
+
+At its core, then, a **one-factor ANOVA** asks whether we should reject the *null hypothesis* that there is *no* difference between our groups.
+
+
+# In-depth walkthrough
+
+Let's return to the example at the beginning. We assign participants to 1 of three metaphorical conditions: PURSUIT, FLIGHT, and SUBSTANCE. Each participant fills out a survey indicating their Happiness Score (out of 100). There are four participants in each condition.
+
+## Setting up data
+
+Our data is as follows:
+
+```{r}
+df_metaphor = data.frame(
+  pursuit = c(95, 90, 97, 95),
+  flight = c(85, 89, 92, 89),
+  substance = c(75, 77, 79, 80)
+) %>%
+  gather(key = "metaphor", value = "happiness")
+```
+
+This yields the following group means:
+
+```{r}
+df_sum = df_metaphor %>%
+  group_by(metaphor) %>%
+  summarise(mean_happiness = mean(happiness),
+            total_happiness = sum(happiness))
+
+df_sum
+```
+
+Our group means and totals certainly *look* different. We can plot them out to visualize these differences:
+
+```{r}
+df_metaphor %>%
+  ggplot(aes(x = metaphor,
+             y = happiness)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal()
+```
+
+## Analyzing the data
+
+Recall that we want to find $F = \frac{\text{Between-group variance}}{\text{Within-group variance}}$. But how do we calculate these values?
+
+**Variance** is calculated as the **mean square** ($MS$) for each of our groups, such that:
+
+$F = \frac{MS_{between}}{MS_{within}}$
+
+Fortunately, $MS$ always has the same formula:
+
+$MS = \frac{SS}{df}$
+
+However, the formula to calculate the **sum of squares** ($SS$) differs according to whether we're calculating $SS_{within}$, $SS_{between}$, or $SS_{total}$, as does the formula to calculate the **degrees of freedom** ($df$). 
+
+Below, I walk through each in turn.
+
+### Calculating the sum of squares
+
+#### Total sum of squares
+
+Let's start with $SS_{total}$, as this is the most straightforward. This is the same as calculating the sum of squares for a single dataset:
+
+$SS = \sum{(X_i - \bar{X})^2}$
+
+In this case, we just combine the data from each of our conditions, calculate the mean value, subtract this mean value from each data point, square that *difference score*, and take the sum of those squared difference scores.
+
+We can calculate this below:
+
+```{r}
+total_ss = sum((df_metaphor$happiness - mean(df_metaphor$happiness))**2)
+total_ss
+```
+
+
+#### Between-group sum of squares
+
+Now we want to calculate the **Between-group sum of squares**. Conceptually, this means we want to know how much the scores in each group differ from the mean of all scores:
+
+$SS_{between} = n * \sum{(\bar{X}_{group} - \bar{X}_{grand})^2}$
+
+Where $n$ is the number of observations (assuming it's the same across each group). Using this formula, we get:
+
+```{r}
+between_ss = 4 * sum((df_sum$mean_happiness - mean(df_metaphor$happiness))**2)
+```
+
+#### Within-group sum of squares
+
+Now you just need to calculate $SS_{within}$. One very straightforward to do this is to simply subtract $SS_{between}$ from $SS_{total}$:
+
+```{r}
+within_ss = total_ss - between_ss
+```
+
+
+### Calculating degrees of freedom
+
+Now that you have your $SS$ estimates, you just need to calculate the $df$. 
+
+For $MS_{between}$, the *degrees of freedom* is:
+
+$df_{between} = k - 1$
+
+Where $k$ is the number of groups. So in this case, we had three groups. That means that $df_{between}$ is 2.
+
+```{r}
+df_between = 3 - 1
+df_between
+```
+
+For $MS_{within}$, the *degrees of freedom* is:
+
+$df_{within} = N - k$
+
+Where $N$ is the total number of observations, and $k$ is the number of groups:
+
+```{r}
+df_within = 12 - 3
+df_within
+```
+
+### Putting it altogether
+
+Now we have the necessary components to calculate $MS_{between}$ and $MS_{within}$:
+
+```{r}
+ms_between = between_ss / df_between
+ms_within = within_ss / df_within
+```
+
+Putting these together, we can calculate $F$:
+
+```{r}
+f_value = ms_between / ms_within
+f_value
+```
+
+So now we have an $F$ statistic. Great! What do we do with this? How do we know whether this is *significant*, and how do we report it in a paper? Both issues are addressed below.
+
+### Assessing significance
+
+This is where the **degrees of freedom** becomes essential. To find a critical value of $F$ (i.e., *alpha* = .05), we look up $df_{within}$ and $df_{between}$ in our **F table**. In this case, those values are 9 and 2, respectively, so the critical value of F at a *.05* level of significance is 5.12.
+
+Thus, since our F-value is ~38.35, we can reject the null at a *p < .05* significance level.
+
+The reason **degrees of freedom** are so important here is that they *parameterize* our F-distribution. The same F-value may be more or less likely under the null hypothesis, depending on the degrees of freedom. For example, in our case, the null distribution would like like this:
+
+```{r}
+hist(rf(100, 2, 9))
+```
+
+So we see that a value of ~38.35 is very unlikely. But with less subjects, our null distribution suddenly looks quite different:
+
+```{r}
+hist(rf(100, 2, 4))
+```
+
+Now ~38.35 is still unlikely, but slightly more likely than before.
+
+### Reporting our results
+
+Finally, we need to report our results. In this case, we'd likely report something like:
+
+
+> "We found a significant difference across our group means, F(2, 9) = 38.35, p < .05."
+
+# ANOVA in R
+
+Of course, you rarely need to calculate an ANOVA by hand. R takes care of this for you with the `aov` command:
+
+```{r}
+model = aov(data = df_metaphor,
+            happiness ~ metaphor)
+```
+
+If you inspect the model using `summary`, you'll get all the same information as before:
+
+```{r}
+summary(model)
+```
+
