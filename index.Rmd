@@ -1,5 +1,5 @@
 ---
-title: "ANOVA"
+title: "One-factor ANOVA"
 author: "Sean Trott"
 date: "March 5, 2020"
 output:
@@ -146,7 +146,15 @@ Where $n$ is the number of observations (assuming it's the same across each grou
 
 ```{r}
 between_ss = 4 * sum((df_sum$mean_happiness - mean(df_metaphor$happiness))**2)
+between_ss
 ```
+
+$SS_{between}$ can *also* be calculated with the following formula:
+
+$SS_{between} = \sum{\frac{T^2}{n} - \frac{G^2}{n}}$
+
+Where $T$ is the *group total*, $G$ is the *grand total*, and *N* is the total number of observations.
+
 
 #### Within-group sum of squares
 
@@ -154,8 +162,22 @@ Now you just need to calculate $SS_{within}$. One very straightforward to do thi
 
 ```{r}
 within_ss = total_ss - between_ss
+within_ss
 ```
 
+Of course, there is also a formula for calculating $SS_{within}$:
+
+$SS_{within} = \sum{(X - \bar{X}_{group})^2}$
+
+```{r}
+df_merged = merge(df_metaphor, df_sum, by="metaphor")
+df_merged$diff = df_merged$happiness - df_merged$mean_happiness
+df_merged$squared = df_merged$diff ** 2
+within_ss_2 = sum(df_merged$squared)
+within_ss_2
+```
+
+I find it useful to calculate $SS_{within}$ *both* ways, just to make sure you've done your calculations correctly.
 
 ### Calculating degrees of freedom
 
@@ -189,7 +211,9 @@ Now we have the necessary components to calculate $MS_{between}$ and $MS_{within
 
 ```{r}
 ms_between = between_ss / df_between
+ms_between
 ms_within = within_ss / df_within
+ms_within
 ```
 
 Putting these together, we can calculate $F$:
@@ -207,7 +231,7 @@ This is where the **degrees of freedom** becomes essential. To find a critical v
 
 Thus, since our F-value is ~38.35, we can reject the null at a *p < .05* significance level.
 
-The reason **degrees of freedom** are so important here is that they *parameterize* our F-distribution. The same F-value may be more or less likely under the null hypothesis, depending on the degrees of freedom. For example, in our case, the null distribution would like like this:
+The reason **degrees of freedom** are so important here is that they *parameterize* our F-distribution. The same F-value may be more or less likely under the null hypothesis, depending on the degrees of freedom:
 
 ```{r}
 hist(rf(100, 2, 9))
@@ -225,12 +249,11 @@ Now ~38.35 is still unlikely, but slightly more likely than before.
 
 Finally, we need to report our results. In this case, we'd likely report something like:
 
-
 > "We found a significant difference across our group means, F(2, 9) = 38.35, p < .05."
 
 # ANOVA in R
 
-Of course, you rarely need to calculate an ANOVA by hand. R takes care of this for you with the `aov` command:
+Of course, you rarely need to calculate an ANOVA table by hand. R takes care of this for you with the `aov` command:
 
 ```{r}
 model = aov(data = df_metaphor,
@@ -242,4 +265,15 @@ If you inspect the model using `summary`, you'll get all the same information as
 ```{r}
 summary(model)
 ```
+
+The `Df` column indicates the values for $df_{between}$ and $df_{within}$ (top and bottom, respectively). That is, our `metaphor` variable has $2$ degrees of our freedom, while the `residuals` (corresponding to our $MS_{within}$) has $9$ degrees of freedom.
+
+The `Sum Sq` column indicates the sum of squares for each factor and the residuals, and the `Mean Sq` column is the result of dividing `Sum Sq` by `Df`. Accordingly, the `F value` column is the result of dividing the `Mean Sq`  for your factor by the `Mean Sq` for your residuals. Finally, the `Pr(>F)` columns represents the probability of obtaining an F-value equal to or greater than the one you obtained under the null hypothesis.
+
+
+# Citation
+
+For citation, please cite as:
+
+Trott, S. (2020). One-factor ANOVAs in R. Retrieved from https://seantrott.github.io/anova_R/.
 
